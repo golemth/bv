@@ -20,7 +20,7 @@ CHANNEL_USERNAME = "@Gx7_chat"         #channel username
 
 # Default cooldown and attack limits
 COOLDOWN_TIME = 60  # Cooldown in seconds
-ATTACK_LIMIT = 10 # Max attacks per day
+ATTACK_LIMIT = 5 # Max attacks per day
 global_pending_attack = None
 global_last_attack_time = None
 pending_feedback = {}  # यूजर 
@@ -311,7 +311,7 @@ def welcome_start(message):
 ⚡ 𝐁𝐄 𝐓𝐇𝐄 𝐊𝐈𝐍𝐆, 𝐃𝐎𝐌𝐈𝐍𝐀𝐓𝐄 𝐓𝐇𝐄 𝐖𝐄𝐁!  
 
 🔗 **𝐓𝐨 𝐔𝐬𝐞 𝐓𝐡𝐢𝐬 𝐁𝐨𝐭, 𝐉𝐨𝐢𝐧 𝐍𝐨𝐰:**  
-👉 [𝙏𝙚𝙡𝙚𝙜𝙧𝙖𝙢 𝙂𝙧𝙤𝙪𝙥](https://t.me/golempaidddos) 🚀🔥"""
+👉 [𝙏𝙚𝙡𝙚𝙜𝙧𝙖𝙢 𝙂𝙧𝙤𝙪𝙥](https://t.me/+fxKFdQNW8VgyZDE1) 🚀🔥"""
     
     bot.reply_to(message, response, parse_mode="Markdown")
 # Function to reset daily limits automatically
