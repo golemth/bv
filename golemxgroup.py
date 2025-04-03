@@ -3,7 +3,7 @@ from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Path to your binary
-BINARY_PATH = "./golemop"
+BINARY_PATH = "./ninja"
 
 # Global variables
 process = None
